@@ -86,8 +86,10 @@
       padding: 6px 14px 6px 8px;
       border-radius: 999px;
       transition: opacity 0.3s ease;
-      opacity: 0;
-      pointer-events: none;
+      opacity: 1;
+      pointer-events: auto;
+      cursor: pointer;
+      min-height: 44px;
     }
 
     .music-widget.is-visible {
@@ -907,8 +909,9 @@
 <body>
 
   <!-- Audio Element: Overnight - Kita Lewati Berdua -->
-  <audio id="bgMusic" preload="auto" loop>
+  <audio id="bgMusic" src="assets/lagu.mp3" preload="auto" playsinline webkit-playsinline loop>
     <source src="assets/lagu.mp3" type="audio/mpeg">
+    <source src="assets/lagu.mp3" type="audio/mp3">
   </audio>
 
   <!-- Floating Audio Widget (Vinyl Record) -->
@@ -1572,35 +1575,61 @@
   </dialog>
 
   <script>
-    // 1. Audio and Vinyl Record Interaction
+    // 1. Audio and Vinyl Record Interaction (Android & Mobile-First Compatible)
     const bgMusic = document.getElementById('bgMusic');
     const musicWidget = document.getElementById('musicWidget');
     const btnToggleMusic = document.getElementById('btnToggleMusic');
     let isMusicStarted = false;
 
     function startMusic() {
-      if (!isMusicStarted) {
-        bgMusic.volume = 0.5;
-        bgMusic.play().then(() => {
+      try {
+        bgMusic.volume = 0.6;
+      } catch (e) { }
+
+      const playPromise = bgMusic.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
           isMusicStarted = true;
           musicWidget.classList.add('is-visible');
           btnToggleMusic.classList.add('is-playing');
         }).catch(err => {
-          console.log('Audio autoplay prevented:', err);
-          musicWidget.classList.add('is-visible');
+          console.log('Autoplay deferred:', err);
+          btnToggleMusic.classList.remove('is-playing');
         });
       }
     }
 
-    btnToggleMusic.addEventListener('click', () => {
+    function toggleAudio() {
       if (bgMusic.paused) {
-        bgMusic.play();
-        btnToggleMusic.classList.add('is-playing');
+        startMusic();
       } else {
         bgMusic.pause();
         btnToggleMusic.classList.remove('is-playing');
       }
-    });
+    }
+
+    let lastWidgetTap = 0;
+    function onWidgetTouch(e) {
+      const now = Date.now();
+      if (now - lastWidgetTap < 350) return;
+      lastWidgetTap = now;
+      if (e.cancelable) e.stopPropagation();
+      toggleAudio();
+    }
+
+    musicWidget.addEventListener('click', onWidgetTouch);
+    musicWidget.addEventListener('touchend', onWidgetTouch, { passive: true });
+
+    // Global fallback: unlock audio on very first touch or click anywhere on mobile screen
+    function unlockAudioOnFirstInteraction() {
+      if (!isMusicStarted || bgMusic.paused) {
+        startMusic();
+      }
+      document.removeEventListener('touchstart', unlockAudioOnFirstInteraction);
+      document.removeEventListener('click', unlockAudioOnFirstInteraction);
+    }
+    document.addEventListener('touchstart', unlockAudioOnFirstInteraction, { passive: true, once: true });
+    document.addEventListener('click', unlockAudioOnFirstInteraction, { passive: true, once: true });
 
     // 2. Mobile Hold-to-Connect Interaction
     const btnHold = document.getElementById('btnHoldDistance');
@@ -1669,6 +1698,11 @@
       holdFill.style.width = '0%';
       btnHoldText.textContent = 'Tahan terus...';
       triggerHaptic(25);
+
+      // Direct synchronous audio trigger so mobile Android never blocks autoplay policy
+      if (!isMusicStarted || bgMusic.paused) {
+        startMusic();
+      }
 
       holdTimer = setInterval(() => {
         holdProgress += 4;
